@@ -1,7 +1,7 @@
 {
   "name": "mini-fps-v1",
-  "version": "1.0.0",
-  "description": "Browser multiplayer 3D FPS prototype with Three.js and Socket.io",
+  "version": "1.1.0",
+  "description": "Browser multiplayer 3D FPS prototype with connection diagnostics",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

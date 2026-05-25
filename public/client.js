@@ -1,6 +1,38 @@
-const socket = io();
-
 const $ = (id) => document.getElementById(id);
+
+let socket = null;
+
+function showLoginError(message) {
+  const el = $("loginError");
+  if (el) el.textContent = message;
+  console.error(message);
+}
+
+if (location.protocol === "file:") {
+  showLoginError("Do not open index.html directly. Run npm start, then open http://localhost:3000.");
+} else if (typeof io === "undefined") {
+  showLoginError("Socket.io did not load. The Node server is probably not running.");
+} else {
+  socket = io({
+    reconnectionAttempts: 5,
+    timeout: 8000
+  });
+
+  socket.on("connect", () => {
+    showLoginError("");
+    console.log("Connected to server:", socket.id);
+  });
+
+  socket.on("connect_error", (err) => {
+    showLoginError("Could not connect to server. Wait for Render to wake up, then refresh.");
+    console.error("Socket connect error:", err);
+  });
+
+  socket.on("disconnect", () => {
+    showLoginError("Disconnected from server. Refresh or wait for Render.");
+  });
+}
+
 
 let myId = null;
 let state = null;
@@ -19,10 +51,20 @@ let audioCtx = null;
 let touchMove = { active: false, dx: 0, dy: 0 };
 
 $("createBtn").onclick = () => {
+  if (!socket || !socket.connected) {
+    showLoginError("Server not connected yet. If on Render, wait 30-60 seconds and refresh.");
+    return;
+  }
+  showLoginError("Creating room...");
   socket.emit("createRoom", { name: $("name").value }, handleJoin);
 };
 
 $("joinBtn").onclick = () => {
+  if (!socket || !socket.connected) {
+    showLoginError("Server not connected yet. If on Render, wait 30-60 seconds and refresh.");
+    return;
+  }
+  showLoginError("Joining room...");
   socket.emit("joinRoom", { name: $("name").value, code: $("roomCode").value }, handleJoin);
 };
 
@@ -31,19 +73,26 @@ function handleJoin(res) {
     $("loginError").textContent = res?.error || "Could not join.";
     return;
   }
+  if (!window.THREE) {
+    showLoginError("Three.js did not load. Check internet/CDN, then refresh.");
+    return;
+  }
   myId = res.id;
+  showLoginError("");
   $("login").classList.add("hidden");
   $("game").classList.remove("hidden");
   init3D();
   initControls();
 }
 
-socket.on("state", (s) => {
-  state = s;
-  $("code").textContent = s.code;
-  updateHUD();
-  updateWorld();
-});
+if (socket) {
+  socket.on("state", (s) => {
+    state = s;
+    $("code").textContent = s.code;
+    updateHUD();
+    updateWorld();
+  });
+}
 
 function init3D() {
   if (!window.THREE) {
@@ -346,7 +395,7 @@ function setKey(code, down) {
 function shoot() {
   unlockAudio();
   playShotSound(true);
-  socket.emit("shoot");
+  if (socket?.connected) socket.emit("shoot");
   muzzleFlash();
 }
 
@@ -384,7 +433,7 @@ function animate() {
       yaw,
       pitch
     };
-    socket.emit("input", input);
+    if (socket?.connected) socket.emit("input", input);
   }
 }
 

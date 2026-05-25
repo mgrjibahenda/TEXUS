@@ -1,23 +1,28 @@
-# Mini FPS v1
+# Mini FPS v1.1 Fixed
 
-A browser-based 3D multiplayer FPS prototype for friends.
+## Fixes
 
-## Features
+- Added visible error messages when the user opens `index.html` directly.
+- Added visible error messages when Socket.io/server is not connected.
+- Added Render wake-up message instead of silent button failure.
+- Added Three.js load check before entering the game.
+- Create Room / Join Room now show feedback like `Creating room...`.
+- Added guards so client code does not crash if the server is not running.
 
-- Three.js 3D map
-- Socket.io multiplayer rooms
-- Create room / join room
-- Up to 4 players
-- WASD movement
-- Mouse-look first person camera
-- Left click to shoot
-- Basic hit detection
-- Health system
-- Kill feed
-- Respawn
-- Scoreboard
-- Simple mobile shoot button / joystick prototype
-- Generated gunshot sound effect
+## Correct way to run locally
+
+```bash
+npm install
+npm start
+```
+
+Then open:
+
+```text
+http://localhost:3000
+```
+
+Do not open `public/index.html` directly.
 
 ## Render settings
 
@@ -32,7 +37,3 @@ Start Command:
 ```bash
 npm start
 ```
-
-## Notes
-
-This is a prototype, not a commercial shooter. It does not include advanced lag compensation, anti-cheat, weapon balancing, or high-end physics.
