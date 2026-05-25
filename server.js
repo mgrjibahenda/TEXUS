@@ -1,36 +1,378 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const crypto = require("crypto");
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
-app.use(express.static('public'));
+
+app.use(express.static("public"));
+
 const PORT = process.env.PORT || 3000;
 const rooms = new Map();
-const SUITS = ['♠','♥','♦','♣'];
-const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
-const VALUE = Object.fromEntries(RANKS.map((r,i)=>[r,i+2]));
-function cleanName(x){return String(x||'Player').trim().slice(0,18)||'Player'}
-function cardView(c){return c ? {...c, display:(c.rank==='T'?'10':c.rank)+c.suit} : c}
-function code(){const s='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let c='';for(let i=0;i<5;i++)c+=s[Math.floor(Math.random()*s.length)];return c}
-function deck(){const d=[];for(const s of SUITS)for(const r of RANKS)d.push({rank:r,suit:s});for(let i=d.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[d[i],d[j]]=[d[j],d[i]]}return d}
-function room(hostId,name){let c;do c=code();while(rooms.has(c));const r={code:c,hostId,players:[newPlayer(hostId,name)],started:false,deck:[],community:[],pot:0,dealerIndex:0,turnIndex:0,currentBet:0,minRaise:20,phase:'lobby',message:'Waiting for players.',smallBlind:10,bigBlind:20,acted:new Set(),winners:[],busted:[],handNumber:0,lastAction:''};rooms.set(c,r);return r}
-function newPlayer(id,name){return {id,name,chips:1000,bet:0,total:0,hand:[],folded:false,allIn:false,connected:true,lastScore:null}}
-function pub(r,viewer){return {code:r.code,hostId:r.hostId,started:r.started,community:r.community.map(cardView),pot:r.pot,dealerIndex:r.dealerIndex,turnIndex:r.turnIndex,currentBet:r.currentBet,minRaise:r.minRaise,phase:r.phase,message:r.message,smallBlind:r.smallBlind,bigBlind:r.bigBlind,winners:r.winners,busted:r.busted,handNumber:r.handNumber,players:r.players.map((p,i)=>({id:p.id,name:p.name,chips:p.chips,bet:p.bet,total:p.total,hand:p.id===viewer||r.phase==='showdown'?p.hand.map(cardView):p.hand.map(()=>({display:'🂠'})),folded:p.folded,allIn:p.allIn,connected:p.connected,seat:i,isYou:p.id===viewer}))}}
-function emit(r){for(const p of r.players)io.to(p.id).emit('state',pub(r,p.id))}
-function find(id){for(const r of rooms.values()){const p=r.players.find(x=>x.id===id);if(p)return {r,p}}return null}
-function nextChips(r,from){for(let s=1;s<=r.players.length;s++){const i=(from+s)%r.players.length;if(r.players[i].chips>0)return i}return -1}
-function nextAble(r,from){for(let s=1;s<=r.players.length;s++){const i=(from+s)%r.players.length,p=r.players[i];if(!p.folded&&!p.allIn&&p.chips>0)return i}return -1}
-function active(r){return r.players.filter(p=>!p.folded)}
-function able(r){return r.players.filter(p=>!p.folded&&!p.allIn&&p.chips>0)}
-function take(p,n){const a=Math.max(0,Math.min(p.chips,n));p.chips-=a;p.bet+=a;p.total+=a;if(p.chips===0)p.allIn=true;return a}
-function start(r){if(r.players.filter(p=>p.chips>0).length<2){r.message='Need at least 2 players with chips.';return}r.handNumber++;r.phase='preflop';r.started=true;r.deck=deck();r.community=[];r.pot=0;r.currentBet=r.bigBlind;r.minRaise=r.bigBlind;r.acted=new Set();r.winners=[];r.busted=[];r.players.forEach(p=>{p.hand=[];p.bet=0;p.total=0;p.folded=p.chips<=0;p.allIn=false;p.lastScore=null});for(let k=0;k<2;k++)for(const p of r.players)if(!p.folded)p.hand.push(r.deck.pop());r.dealerIndex%=r.players.length;const sb=nextChips(r,r.dealerIndex),bb=nextChips(r,sb);if(sb<0||bb<0||sb===bb){r.message='Need at least 2 players with chips.';return}take(r.players[sb],r.smallBlind);take(r.players[bb],r.bigBlind);r.currentBet=Math.max(r.players[sb].bet,r.players[bb].bet);r.turnIndex=nextAble(r,bb);if(r.turnIndex<0)r.turnIndex=bb;r.message=`${r.players[sb].name} posts small blind, ${r.players[bb].name} posts big blind.`}
-function matched(r){const a=able(r);if(a.length===0)return true;return a.every(p=>p.bet===r.currentBet&&r.acted.has(p.id))}
-function endRound(r){for(const p of r.players){r.pot+=p.bet;p.bet=0}r.currentBet=0;r.minRaise=r.bigBlind;r.acted=new Set();if(active(r).length<=1)return finish(r);if(r.phase==='preflop'){r.phase='flop';r.community.push(r.deck.pop(),r.deck.pop(),r.deck.pop());r.message='Flop dealt.'}else if(r.phase==='flop'){r.phase='turn';r.community.push(r.deck.pop());r.message='Turn dealt.'}else if(r.phase==='turn'){r.phase='river';r.community.push(r.deck.pop());r.message='River dealt.'}else return finish(r);r.turnIndex=nextAble(r,r.dealerIndex);if(r.turnIndex<0)finish(r)}
-function after(r){if(active(r).length<=1)return finish(r);if(matched(r))return endRound(r);const n=nextAble(r,r.turnIndex);if(n>=0)r.turnIndex=n;else endRound(r)}
-function finish(r){for(const p of r.players){r.pot+=p.bet;p.bet=0}r.phase='showdown';let still=r.players.filter(p=>!p.folded),wins=[],best=null;if(still.length===1){wins=[still[0]];wins[0].lastScore={rank:-1,name:'Fold Win',cn:'弃牌胜利',effect:'foldwin',tiebreak:[]};r.message=`${wins[0].name} wins because everyone else folded.`}else{for(const p of still){const sc=evaluate([...p.hand,...r.community]);p.lastScore=sc;if(!best||cmp(sc,best)>0){best=sc;wins=[p]}else if(cmp(sc,best)===0)wins.push(p)}r.message=`${wins.map(w=>w.name).join(', ')} win with ${best.cn}.`}const share=Math.floor(r.pot/wins.length);wins.forEach(w=>w.chips+=share);r.winners=wins.map(w=>({id:w.id,name:w.name,amount:share,handName:w.lastScore.name,handNameCn:w.lastScore.cn,effect:w.lastScore.effect,rank:w.lastScore.rank}));r.busted=r.players.filter(p=>p.chips<=0&&!wins.some(w=>w.id===p.id)).map(p=>({id:p.id,name:p.name}));r.pot=0;r.dealerIndex=nextChips(r,r.dealerIndex);if(r.dealerIndex<0)r.dealerIndex=0}
-function vals(cards){return cards.map(c=>VALUE[c.rank]).sort((a,b)=>b-a)}function uniq(v){return [...new Set(v)].sort((a,b)=>b-a)}function straight(v){const u=uniq(v);if(u.includes(14))u.push(1);for(let i=0;i<=u.length-5;i++){const s=u.slice(i,i+5);if(s[0]-s[4]===4&&new Set(s).size===5)return s[0]===1?5:s[0]}return null}
-function evaluate(cards){const v=vals(cards),g={};v.forEach(x=>g[x]=(g[x]||0)+1);const ge=Object.entries(g).map(([v,c])=>({v:+v,count:c})).sort((a,b)=>b.count-a.count||b.v-a.v);const suits={};cards.forEach(c=>(suits[c.suit]??=[]).push(VALUE[c.rank]));for(const s in suits)if(suits[s].length>=5){const h=straight(suits[s]);if(h)return{rank:8,tiebreak:[h],name:h===14?'Royal Flush':'Straight Flush',cn:h===14?'皇家同花顺':'同花顺',effect:h===14?'royal':'straightflush'}}const four=ge.find(x=>x.count===4);if(four)return{rank:7,tiebreak:[four.v,v.find(x=>x!==four.v)],name:'Four of a Kind',cn:'四条',effect:'fourkind'};const trips=ge.filter(x=>x.count===3),pairs=ge.filter(x=>x.count===2);if(trips.length&&(pairs.length||trips.length>1))return{rank:6,tiebreak:[trips[0].v,trips.length>1?trips[1].v:pairs[0].v],name:'Full House',cn:'葫芦',effect:'fullhouse'};for(const s in suits)if(suits[s].length>=5)return{rank:5,tiebreak:uniq(suits[s]).slice(0,5),name:'Flush',cn:'同花',effect:'flush'};const st=straight(v);if(st)return{rank:4,tiebreak:[st],name:'Straight',cn:'顺子',effect:'straight'};if(trips.length){const t=trips[0].v;return{rank:3,tiebreak:[t,...v.filter(x=>x!==t).slice(0,2)],name:'Three of a Kind',cn:'三条',effect:'threekind'}}if(pairs.length>=2){const ps=pairs.slice(0,2).map(p=>p.v);return{rank:2,tiebreak:[...ps,v.find(x=>!ps.includes(x))],name:'Two Pair',cn:'两对',effect:'twopair'}}if(pairs.length===1){const p=pairs[0].v;return{rank:1,tiebreak:[p,...v.filter(x=>x!==p).slice(0,3)],name:'One Pair',cn:'一对',effect:'onepair'}}return{rank:0,tiebreak:v.slice(0,5),name:'High Card',cn:'高牌',effect:'highcard'}}
-function cmp(a,b){if(a.rank!==b.rank)return a.rank-b.rank;for(let i=0;i<Math.max(a.tiebreak.length,b.tiebreak.length);i++){if((a.tiebreak[i]||0)!==(b.tiebreak[i]||0))return(a.tiebreak[i]||0)-(b.tiebreak[i]||0)}return 0}
-io.on('connection',socket=>{socket.on('createRoom',({name},cb)=>{const r=room(socket.id,cleanName(name));socket.join(r.code);cb?.({ok:true,code:r.code});emit(r)});socket.on('joinRoom',({code,name},cb)=>{const r=rooms.get(String(code||'').toUpperCase().trim());if(!r)return cb?.({ok:false,error:'Room not found.'});if(r.phase!=='lobby'&&r.phase!=='showdown')return cb?.({ok:false,error:'Hand already started.'});if(r.players.length>=8)return cb?.({ok:false,error:'Room is full.'});r.players.push(newPlayer(socket.id,cleanName(name)));socket.join(r.code);cb?.({ok:true,code:r.code});emit(r)});socket.on('setPlayerChips',({playerId,chips})=>{const f=find(socket.id);if(!f||f.r.hostId!==socket.id||f.r.phase!=='lobby')return;const p=f.r.players.find(x=>x.id===playerId);const n=Math.max(0,Math.min(999999,Math.floor(Number(chips))));if(p&&Number.isFinite(n)){p.chips=n;emit(f.r)}});socket.on('setAllChips',({chips})=>{const f=find(socket.id);if(!f||f.r.hostId!==socket.id||f.r.phase!=='lobby')return;const n=Math.max(0,Math.min(999999,Math.floor(Number(chips))));if(Number.isFinite(n)){f.r.players.forEach(p=>{p.chips=n;p.bet=0;p.folded=false;p.allIn=false});emit(f.r)}});socket.on('startHand',()=>{const f=find(socket.id);if(!f||f.r.hostId!==socket.id)return;if(f.r.phase!=='lobby'&&f.r.phase!=='showdown')return;start(f.r);emit(f.r)});socket.on('action',({type,amount})=>{const f=find(socket.id);if(!f)return;const r=f.r,p=f.p;if(r.phase==='lobby'||r.phase==='showdown'||r.players[r.turnIndex]?.id!==socket.id||p.folded||p.allIn)return;const call=Math.max(0,r.currentBet-p.bet);if(type==='fold'){p.folded=true;r.acted.add(p.id);r.message=`${p.name} folds.`}else if(type==='check'){if(call!==0)return;r.acted.add(p.id);r.message=`${p.name} checks.`}else if(type==='call'){const paid=take(p,call);r.acted.add(p.id);r.message=`${p.name} calls ${paid}.`}else if(type==='raise'){const target=Math.floor(Number(amount));const raiseBy=target-r.currentBet;if(!Number.isFinite(target)||target<=r.currentBet||raiseBy<r.minRaise)return;take(p,target-p.bet);r.currentBet=p.bet;r.minRaise=Math.max(r.minRaise,raiseBy);r.acted=new Set([p.id]);r.message=`${p.name} raises to ${r.currentBet}.`}else if(type==='allin'){take(p,p.chips);if(p.bet>r.currentBet){r.minRaise=Math.max(r.bigBlind,p.bet-r.currentBet);r.currentBet=p.bet;r.acted=new Set([p.id])}else r.acted.add(p.id);r.message=`${p.name} goes all-in.`}after(r);emit(r)});socket.on('disconnect',()=>{const f=find(socket.id);if(!f)return;f.p.connected=false;f.r.message=`${f.p.name} disconnected.`;emit(f.r)})});
-server.listen(PORT,()=>console.log(`Texas Hold'em v4 running at http://localhost:${PORT}`));
+
+const MAP_SIZE = 60;
+const PLAYER_RADIUS = 0.65;
+const MAX_PLAYERS = 4;
+const TICK_RATE = 30;
+const RESPAWN_MS = 2500;
+const MAX_HEALTH = 100;
+
+const walls = [
+  { x: 0, z: -28, w: 60, d: 3 },
+  { x: 0, z: 28, w: 60, d: 3 },
+  { x: -28, z: 0, w: 3, d: 60 },
+  { x: 28, z: 0, w: 3, d: 60 },
+  { x: 0, z: 0, w: 7, d: 16 },
+  { x: -14, z: -12, w: 14, d: 4 },
+  { x: 14, z: 12, w: 14, d: 4 },
+  { x: -16, z: 14, w: 5, d: 10 },
+  { x: 17, z: -15, w: 5, d: 10 },
+  { x: 0, z: 21, w: 18, d: 3 },
+  { x: 0, z: -21, w: 18, d: 3 }
+];
+
+const spawns = [
+  { x: -22, y: 1.6, z: -22, yaw: Math.PI / 4 },
+  { x: 22, y: 1.6, z: 22, yaw: -3 * Math.PI / 4 },
+  { x: -22, y: 1.6, z: 22, yaw: -Math.PI / 4 },
+  { x: 22, y: 1.6, z: -22, yaw: 3 * Math.PI / 4 }
+];
+
+function makeRoomCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 5; i++) code += chars[crypto.randomInt(chars.length)];
+  return code;
+}
+
+function createRoom(hostId) {
+  let code;
+  do code = makeRoomCode();
+  while (rooms.has(code));
+
+  const room = {
+    code,
+    hostId,
+    players: new Map(),
+    bullets: [],
+    events: [],
+    startedAt: Date.now()
+  };
+  rooms.set(code, room);
+  return room;
+}
+
+function publicRoom(room) {
+  return {
+    code: room.code,
+    hostId: room.hostId,
+    walls,
+    players: Array.from(room.players.values()).map(p => ({
+      id: p.id,
+      name: p.name,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      yaw: p.yaw,
+      pitch: p.pitch,
+      health: p.health,
+      alive: p.alive,
+      kills: p.kills,
+      deaths: p.deaths,
+      color: p.color,
+      shootingUntil: p.shootingUntil || 0,
+      respawnAt: p.respawnAt || 0
+    })),
+    bullets: room.bullets,
+    events: room.events.slice(-8),
+    now: Date.now()
+  };
+}
+
+function spawnForIndex(idx) {
+  return { ...spawns[idx % spawns.length] };
+}
+
+function makePlayer(socket, name, idx) {
+  const s = spawnForIndex(idx);
+  return {
+    id: socket.id,
+    name: String(name || "Player").trim().slice(0, 16) || "Player",
+    x: s.x,
+    y: s.y,
+    z: s.z,
+    yaw: s.yaw,
+    pitch: 0,
+    health: MAX_HEALTH,
+    alive: true,
+    kills: 0,
+    deaths: 0,
+    color: ["#ff5252", "#52a7ff", "#52ff8a", "#f5d66c"][idx % 4],
+    input: { w: false, a: false, s: false, d: false },
+    lastShot: 0,
+    respawnAt: 0,
+    shootingUntil: 0
+  };
+}
+
+function findPlayerRoom(id) {
+  for (const room of rooms.values()) {
+    if (room.players.has(id)) return room;
+  }
+  return null;
+}
+
+function isInsideWall(x, z, wall, pad = PLAYER_RADIUS) {
+  return x > wall.x - wall.w / 2 - pad &&
+    x < wall.x + wall.w / 2 + pad &&
+    z > wall.z - wall.d / 2 - pad &&
+    z < wall.z + wall.d / 2 + pad;
+}
+
+function collides(x, z) {
+  if (x < -MAP_SIZE / 2 + PLAYER_RADIUS || x > MAP_SIZE / 2 - PLAYER_RADIUS ||
+      z < -MAP_SIZE / 2 + PLAYER_RADIUS || z > MAP_SIZE / 2 - PLAYER_RADIUS) {
+    return true;
+  }
+  return walls.some(w => isInsideWall(x, z, w));
+}
+
+function hasLineOfSight(room, from, to) {
+  const steps = 50;
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const x = from.x + (to.x - from.x) * t;
+    const z = from.z + (to.z - from.z) * t;
+    if (walls.some(w => isInsideWall(x, z, w, 0.05))) return false;
+  }
+  return true;
+}
+
+function rayHit(room, shooter, dir) {
+  let best = null;
+  const origin = { x: shooter.x, y: shooter.y, z: shooter.z };
+
+  for (const target of room.players.values()) {
+    if (target.id === shooter.id || !target.alive) continue;
+
+    const to = {
+      x: target.x - origin.x,
+      y: target.y - origin.y,
+      z: target.z - origin.z
+    };
+    const projection = to.x * dir.x + to.y * dir.y + to.z * dir.z;
+    if (projection <= 0 || projection > 80) continue;
+
+    const closest = {
+      x: origin.x + dir.x * projection,
+      y: origin.y + dir.y * projection,
+      z: origin.z + dir.z * projection
+    };
+    const dx = target.x - closest.x;
+    const dy = target.y - closest.y;
+    const dz = target.z - closest.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+    if (dist < 0.85 && hasLineOfSight(room, origin, target)) {
+      if (!best || projection < best.distance) best = { target, distance: projection };
+    }
+  }
+  return best;
+}
+
+function shoot(room, shooter) {
+  const now = Date.now();
+  if (!shooter.alive) return;
+  if (now - shooter.lastShot < 180) return;
+  shooter.lastShot = now;
+  shooter.shootingUntil = now + 120;
+
+  const dir = {
+    x: Math.sin(shooter.yaw) * Math.cos(shooter.pitch),
+    y: Math.sin(shooter.pitch),
+    z: Math.cos(shooter.yaw) * Math.cos(shooter.pitch)
+  };
+
+  room.bullets.push({
+    id: now + "-" + crypto.randomInt(999999),
+    from: shooter.id,
+    x: shooter.x,
+    y: shooter.y,
+    z: shooter.z,
+    dx: dir.x,
+    dy: dir.y,
+    dz: dir.z,
+    born: now,
+    life: 180
+  });
+
+  const hit = rayHit(room, shooter, dir);
+  if (hit) {
+    const damage = hit.distance < 18 ? 34 : 25;
+    hit.target.health = Math.max(0, hit.target.health - damage);
+    room.events.push({
+      id: "hit-" + now,
+      type: "hit",
+      text: `${shooter.name} hit ${hit.target.name} -${damage}`,
+      ts: now
+    });
+
+    if (hit.target.health <= 0) {
+      hit.target.alive = false;
+      hit.target.deaths += 1;
+      hit.target.respawnAt = now + RESPAWN_MS;
+      shooter.kills += 1;
+      room.events.push({
+        id: "kill-" + now,
+        type: "kill",
+        text: `${shooter.name} eliminated ${hit.target.name}`,
+        ts: now
+      });
+    }
+  }
+}
+
+function respawn(room, p) {
+  const idx = Array.from(room.players.keys()).indexOf(p.id);
+  const s = spawnForIndex(idx);
+  p.x = s.x;
+  p.y = s.y;
+  p.z = s.z;
+  p.yaw = s.yaw;
+  p.pitch = 0;
+  p.health = MAX_HEALTH;
+  p.alive = true;
+  p.respawnAt = 0;
+  room.events.push({
+    id: "respawn-" + Date.now() + "-" + p.id,
+    type: "respawn",
+    text: `${p.name} respawned`,
+    ts: Date.now()
+  });
+}
+
+function updateRoom(room, dt) {
+  const now = Date.now();
+
+  for (const p of room.players.values()) {
+    if (!p.alive) {
+      if (p.respawnAt && now >= p.respawnAt) respawn(room, p);
+      continue;
+    }
+
+    const forwardX = Math.sin(p.yaw);
+    const forwardZ = Math.cos(p.yaw);
+    const rightX = Math.cos(p.yaw);
+    const rightZ = -Math.sin(p.yaw);
+    let vx = 0;
+    let vz = 0;
+
+    if (p.input.w) { vx += forwardX; vz += forwardZ; }
+    if (p.input.s) { vx -= forwardX; vz -= forwardZ; }
+    if (p.input.d) { vx += rightX; vz += rightZ; }
+    if (p.input.a) { vx -= rightX; vz -= rightZ; }
+
+    const len = Math.hypot(vx, vz) || 1;
+    const speed = 10;
+    vx = (vx / len) * speed * dt;
+    vz = (vz / len) * speed * dt;
+
+    const nx = p.x + vx;
+    const nz = p.z + vz;
+    if (!collides(nx, p.z)) p.x = nx;
+    if (!collides(p.x, nz)) p.z = nz;
+  }
+
+  room.bullets = room.bullets.filter(b => now - b.born < b.life);
+  room.events = room.events.filter(e => now - e.ts < 6000);
+}
+
+io.on("connection", (socket) => {
+  socket.on("createRoom", ({ name }, cb) => {
+    const room = createRoom(socket.id);
+    const player = makePlayer(socket, name, 0);
+    room.players.set(socket.id, player);
+    socket.join(room.code);
+    cb?.({ ok: true, code: room.code, id: socket.id });
+    io.to(room.code).emit("state", publicRoom(room));
+  });
+
+  socket.on("joinRoom", ({ name, code }, cb) => {
+    const room = rooms.get(String(code || "").trim().toUpperCase());
+    if (!room) return cb?.({ ok: false, error: "Room not found." });
+    if (room.players.size >= MAX_PLAYERS) return cb?.({ ok: false, error: "Room full." });
+
+    const player = makePlayer(socket, name, room.players.size);
+    room.players.set(socket.id, player);
+    socket.join(room.code);
+    cb?.({ ok: true, code: room.code, id: socket.id });
+    room.events.push({
+      id: "join-" + Date.now(),
+      type: "join",
+      text: `${player.name} joined`,
+      ts: Date.now()
+    });
+    io.to(room.code).emit("state", publicRoom(room));
+  });
+
+  socket.on("input", (input) => {
+    const room = findPlayerRoom(socket.id);
+    if (!room) return;
+    const p = room.players.get(socket.id);
+    if (!p) return;
+    p.input = {
+      w: !!input.w,
+      a: !!input.a,
+      s: !!input.s,
+      d: !!input.d
+    };
+    if (Number.isFinite(input.yaw)) p.yaw = input.yaw;
+    if (Number.isFinite(input.pitch)) p.pitch = Math.max(-0.9, Math.min(0.9, input.pitch));
+  });
+
+  socket.on("shoot", () => {
+    const room = findPlayerRoom(socket.id);
+    if (!room) return;
+    const p = room.players.get(socket.id);
+    if (!p) return;
+    shoot(room, p);
+    io.to(room.code).emit("state", publicRoom(room));
+  });
+
+  socket.on("disconnect", () => {
+    const room = findPlayerRoom(socket.id);
+    if (!room) return;
+    const p = room.players.get(socket.id);
+    room.players.delete(socket.id);
+
+    if (room.players.size === 0) {
+      rooms.delete(room.code);
+      return;
+    }
+
+    if (room.hostId === socket.id) {
+      room.hostId = room.players.keys().next().value;
+    }
+
+    room.events.push({
+      id: "leave-" + Date.now(),
+      type: "leave",
+      text: `${p?.name || "Player"} disconnected`,
+      ts: Date.now()
+    });
+    io.to(room.code).emit("state", publicRoom(room));
+  });
+});
+
+setInterval(() => {
+  for (const room of rooms.values()) {
+    updateRoom(room, 1 / TICK_RATE);
+    io.to(room.code).emit("state", publicRoom(room));
+  }
+}, 1000 / TICK_RATE);
+
+server.listen(PORT, () => {
+  console.log(`Mini FPS v1 running on port ${PORT}`);
+});

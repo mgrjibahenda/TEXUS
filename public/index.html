@@ -1,8 +1,52 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Texas Hold'em v4</title><link rel="stylesheet" href="/style.css"></head><body>
-<main class="app">
-<section id="login" class="login"><div class="loginCard"><div class="mark">♠</div><h1>Texas Hold'em</h1><p>Private room · virtual chips</p><input id="name" placeholder="Player name" maxlength="18"><button id="createBtn" class="primary wide">Create Room</button><div class="join"><input id="roomCode" placeholder="Room code" maxlength="5"><button id="joinBtn">Join</button></div><p id="loginError" class="error"></p></div></section>
-<section id="game" class="game hidden"><header class="topbar"><div><div class="eyebrow">Room <span id="code"></span></div><h2 id="statusTitle">Waiting</h2><p id="message"></p></div><button id="nextHandBtn" class="primary hidden">Next Hand</button></header>
-<section id="lobbyPanel" class="lobbyPanel hidden"><div class="lobbyHeader"><div><h3>Stack setup</h3><p>Dealer can set every player's chips before start.</p></div><div id="hostStartWrap"></div></div><div id="chipControls" class="chipControls"></div></section>
-<section class="tableWrap"><div class="tableGlow"></div><div class="pokerTable"><div class="centerBoard"><div class="potPill">Pot <span id="pot">0</span></div><div id="community" class="community"></div><div id="phasePill" class="phasePill">Lobby</div></div><div id="players" class="seats"></div></div></section>
-<section id="actionPanel" class="actionPanel hidden"><div id="turnText"></div><div id="actionButtons" class="actionButtons"></div></section>
-</section></main><script src="/socket.io/socket.io.js"></script><script src="/client.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini FPS v1</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="login" class="login">
+    <div class="card">
+      <h1>Mini FPS</h1>
+      <p>3D online shooter prototype for friends.</p>
+      <input id="name" maxlength="16" placeholder="Player name" />
+      <input id="roomCode" maxlength="5" placeholder="Room code" />
+      <button id="createBtn">Create Room</button>
+      <button id="joinBtn">Join Room</button>
+      <div id="loginError"></div>
+      <div class="tips">
+        PC controls: WASD move, mouse look, left click shoot. Click the game to lock pointer.
+      </div>
+    </div>
+  </div>
+
+  <div id="game" class="hidden">
+    <canvas id="scene"></canvas>
+    <div id="hud">
+      <div class="top">
+        <div>Room: <b id="code">-----</b></div>
+        <div id="status">Click screen to play</div>
+      </div>
+      <div id="crosshair">+</div>
+      <div class="bottom">
+        <div class="healthWrap">
+          <div>HP</div>
+          <div class="healthBar"><div id="healthFill"></div></div>
+          <div id="healthText">100</div>
+        </div>
+        <div id="ammo">Rifle</div>
+      </div>
+      <div id="scoreboard"></div>
+      <div id="feed"></div>
+      <button id="mobileShoot">Shoot</button>
+      <div id="mobileStick" class="mobileStick"><div></div></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>

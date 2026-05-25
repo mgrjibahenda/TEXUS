@@ -1,20 +1,38 @@
-# Texas Hold'em v4 Premium
+# Mini FPS v1
 
-Render 可部署升级版。
+A browser-based 3D multiplayer FPS prototype for friends.
 
-新增：
-- 进入界面只需要 Player name。
-- 删除 Custom ID 和多余按钮。
-- Dealer 可以开局前设置每个玩家筹码。
-- Dealer 可以一键把一个数字设置给所有玩家。
-- 玩家均匀分布在圆形牌桌周围。
-- 非本人回合不显示行动按钮。
-- 本人回合只显示当前可用操作。
-- 10 不再显示为 T。
-- 不同牌型触发不同特效，高级牌型更华丽。
-- 赢家吹捧和破产嘲讽随机变化。
-- 一局结束后只有 Dealer 有 Next Hand。
+## Features
 
-Render 设置：
-Build Command: npm install
-Start Command: npm start
+- Three.js 3D map
+- Socket.io multiplayer rooms
+- Create room / join room
+- Up to 4 players
+- WASD movement
+- Mouse-look first person camera
+- Left click to shoot
+- Basic hit detection
+- Health system
+- Kill feed
+- Respawn
+- Scoreboard
+- Simple mobile shoot button / joystick prototype
+- Generated gunshot sound effect
+
+## Render settings
+
+Build Command:
+
+```bash
+npm install
+```
+
+Start Command:
+
+```bash
+npm start
+```
+
+## Notes
+
+This is a prototype, not a commercial shooter. It does not include advanced lag compensation, anti-cheat, weapon balancing, or high-end physics.
