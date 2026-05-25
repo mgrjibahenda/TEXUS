@@ -1,0 +1,1 @@
+{"name":"texas-holdem-v4-premium","version":"4.0.0","main":"server.js","scripts":{"start":"node server.js"},"dependencies":{"express":"^4.18.3","socket.io":"^4.7.5"},"engines":{"node":">=18"}}
