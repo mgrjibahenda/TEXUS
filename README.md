@@ -1,19 +1,19 @@
-# Midnight Bluff Tavern 3D Web Game
+# Midnight Bluff Tavern — True 3D Web Game
 
-这是一个原创的、受酒馆诈唬牌局启发的 3D 网页游戏原型。
+这是一个原创的 3D 酒馆诈唬牌局网页游戏，适合直接上传到 GitHub Pages。
 
-## 上传 GitHub Pages
-
+## 上传方法
 1. 解压 zip。
-2. 把 `index.html`、`style.css`、`game.js`、`README.md` 放到 GitHub 仓库根目录。
+2. 把 `index.html`、`style.css`、`game.js`、`README.md` 拖到你的 GitHub 仓库根目录。
 3. Commit changes。
-4. 在 Settings → Pages 开启 GitHub Pages。
-5. 打开 Pages 链接游玩。
+4. 到 GitHub Pages 打开网页。
+5. 如果看到旧版本，按 `Ctrl + F5` 强制刷新。
 
-## 说明
+## 特点
+- 原生 WebGL 真 3D，不依赖 CDN，不需要安装 Three.js。
+- 酒馆房间、吧台、火炉、吊灯、蜡烛、玩家、桌子、手牌、筹码、轮盘道具。
+- 支持鼠标拖动旋转视角，滚轮缩放。
+- 有出牌、诈唬、质疑、轮盘惩罚、AI 玩家、行动日志。
 
-- 不依赖外部 CDN。
-- 不需要安装 npm。
-- 鼠标拖动可以旋转视角，滚轮缩放。
-- 包含 3D 酒馆、玩家、桌子、筹码、手牌、质疑和轮盘惩罚。
-- 所有素材均为代码生成的原创 CSS/HTML 元素，没有复制任何 Steam 游戏资产。
+## 版权说明
+本项目是原创网页原型。没有使用、复制或提取任何 Steam 游戏的受版权保护素材、模型、音乐、贴图或 UI。
