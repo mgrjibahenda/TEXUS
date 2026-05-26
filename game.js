@@ -232,7 +232,7 @@ let selected = new Set();
 let showHand = true;
 let lastPlay = null;
 let chamber = 1;
-let round = 1;
+let round = 0;
 let busy = false;
 
 const handEl = document.getElementById('handCards');
@@ -243,10 +243,17 @@ const chamberText = document.getElementById('chamberText');
 const statusText = document.getElementById('statusText');
 const toast = document.getElementById('toast');
 
+function safeId() {
+  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `card-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function buildDeck() {
   const d = [];
-  for (const r of ranks) for (const s of suits) d.push({ rank: r, suit: s, id: crypto.randomUUID() });
-  for (let i = 0; i < 8; i++) d.push({ rank: 'JOKER', suit: '★', id: crypto.randomUUID() });
+  for (const r of ranks) for (const s of suits) d.push({ rank: r, suit: s, id: safeId() });
+  for (let i = 0; i < 8; i++) d.push({ rank: 'JOKER', suit: '★', id: safeId() });
   return d.sort(() => Math.random() - 0.5);
 }
 
@@ -296,7 +303,11 @@ function updateUI() {
   document.getElementById('challengeBtn').disabled = !lastPlay || busy || currentPlayer !== 0;
   document.getElementById('playBtn').disabled = busy || currentPlayer !== 0 || players[0].hand.length === 0;
   document.getElementById('passBtn').disabled = busy || currentPlayer !== 0;
-  statusText.textContent = currentPlayer === 0 ? '轮到你。选择手牌，或者直接观察/质疑上一家。' : `${players[currentPlayer].name} 正在思考……`;
+  statusText.textContent = currentPlayer === 0
+    ? (lastPlay && players[lastPlay.playerIndex].hand.length === 0
+      ? `${players[lastPlay.playerIndex].name} 已出完最后一手。你可以质疑；如果观察，他将赢下本局。`
+      : '轮到你。选择手牌，或者直接观察/质疑上一家。')
+    : `${players[currentPlayer].name} 正在思考……`;
   playerMeshes.forEach((pm, i) => {
     pm.label.material.opacity = players[i].alive ? 1 : .28;
     pm.body.material.emissive = new THREE.Color(i === currentPlayer ? 0x2d1600 : 0x000000);
@@ -355,9 +366,9 @@ function challenge(challengerIndex) {
     const loserIndex = lastPlay.honest ? challengerIndex : lastPlay.playerIndex;
     const loser = players[loserIndex];
     log(lastPlay.honest ? `${challenged.name} 没有撒谎，${challenger.name} 质疑失败。` : `${challenged.name} 被抓到诈唬。`, 'danger');
-    roulette(loserIndex);
+    const roundEnded = roulette(loserIndex);
     lastPlay = null;
-    setTimeout(() => { busy = false; nextPlayer(); }, 2100);
+    if (!roundEnded) setTimeout(() => { busy = false; nextPlayer(); }, 2100);
   }, 1200);
 }
 
@@ -379,19 +390,29 @@ function roulette(playerIndex) {
     showToast('咔哒……空枪');
   }
   chamber = Math.max(chamber, p.risk);
-  checkEnd();
+  if (checkEnd()) return true;
   updateUI();
+  return false;
+}
+
+function finishRound(winnerIndex, reason = '拿走酒馆桌上的筹码') {
+  busy = true;
+  const winner = players[winnerIndex] || players.find(p => p.alive) || players[0];
+  winner.chips += 800;
+  winner.lastAction = '本局赢家';
+  log(`${winner.name} ${reason}。`);
+  showToast(`${winner.name} 获胜`);
+  updateUI();
+  setTimeout(() => { busy = false; newGame(); }, 2800);
 }
 
 function checkEnd() {
-  const alive = players.filter(p => p.alive);
-  if (alive.length <= 1) {
-    const winner = alive[0] || players[0];
-    winner.chips += 800;
-    log(`${winner.name} 成为最后赢家，拿走酒馆桌上的筹码。`);
-    showToast(`${winner.name} 获胜`);
-    setTimeout(newGame, 2800);
+  const aliveIndexes = players.map((p, i) => p.alive ? i : -1).filter(i => i >= 0);
+  if (aliveIndexes.length <= 1) {
+    finishRound(aliveIndexes[0] ?? 0, '成为最后赢家，拿走酒馆桌上的筹码');
+    return true;
   }
+  return false;
 }
 
 function aiTurn() {
@@ -400,6 +421,11 @@ function aiTurn() {
   if (!p.alive) return nextPlayer();
   const suspicion = lastPlay ? (lastPlay.claimedCount * .18 + (players[lastPlay.playerIndex].risk - 1) * .08 + Math.random() * .45) : 0;
   if (lastPlay && suspicion > .55) return challenge(currentPlayer);
+  if (lastPlay && players[lastPlay.playerIndex].hand.length === 0) {
+    finishRound(lastPlay.playerIndex, '最后一手没有被质疑，安全离桌');
+    lastPlay = null;
+    return;
+  }
   const count = Math.min(p.hand.length, 1 + Math.floor(Math.random() * 3));
   const honestIndexes = p.hand.map((c, i) => (c.rank === targetRank || c.rank === 'JOKER') ? i : -1).filter(i => i >= 0);
   let indexes = [];
@@ -513,7 +539,16 @@ document.getElementById('playBtn').onclick = () => {
   }
 };
 document.getElementById('challengeBtn').onclick = () => challenge(0);
-document.getElementById('passBtn').onclick = () => { players[0].lastAction = '观察'; log('你选择观察一回合。'); nextPlayer(); };
+document.getElementById('passBtn').onclick = () => {
+  players[0].lastAction = '观察';
+  log('你选择观察一回合。');
+  if (lastPlay && players[lastPlay.playerIndex].hand.length === 0) {
+    finishRound(lastPlay.playerIndex, '最后一手没有被你质疑，安全离桌');
+    lastPlay = null;
+    return;
+  }
+  nextPlayer();
+};
 document.getElementById('newRoundBtn').onclick = newGame;
 document.getElementById('peekBtn').onclick = () => { showHand = !showHand; renderHand(); };
 document.getElementById('rulesToggle').onclick = () => document.querySelector('.rules').classList.toggle('open');
