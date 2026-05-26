@@ -1,227 +1,3 @@
-import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-
-const canvas = document.getElementById('gameCanvas');
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x080403);
-scene.fog = new THREE.FogExp2(0x090504, 0.035);
-
-const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 120);
-camera.position.set(0, 6.5, 10.5);
-camera.lookAt(0, 1.4, 0);
-
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
-
-const clock = new THREE.Clock();
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-
-const colors = {
-  wood: 0x3d1d10,
-  darkWood: 0x1e0e08,
-  gold: 0xd6a84f,
-  red: 0x8d221e,
-  green: 0x21382a,
-  brass: 0xa36a25,
-  paper: 0xe2c486,
-  black: 0x080606,
-  skin: 0x7a4a2e,
-};
-
-const mats = {
-  wood: new THREE.MeshStandardMaterial({ color: colors.wood, roughness: 0.72, metalness: 0.04 }),
-  darkWood: new THREE.MeshStandardMaterial({ color: colors.darkWood, roughness: 0.88 }),
-  gold: new THREE.MeshStandardMaterial({ color: colors.gold, roughness: 0.4, metalness: 0.45, emissive: 0x1b1100 }),
-  brass: new THREE.MeshStandardMaterial({ color: colors.brass, roughness: 0.32, metalness: 0.65 }),
-  red: new THREE.MeshStandardMaterial({ color: colors.red, roughness: 0.65 }),
-  green: new THREE.MeshStandardMaterial({ color: colors.green, roughness: 0.8 }),
-  paper: new THREE.MeshStandardMaterial({ color: colors.paper, roughness: 0.5 }),
-  black: new THREE.MeshStandardMaterial({ color: colors.black, roughness: 0.7 }),
-  glass: new THREE.MeshPhysicalMaterial({ color: 0xffc16c, transparent: true, opacity: 0.22, roughness: 0.08, transmission: 0.3 }),
-  cardBack: new THREE.MeshStandardMaterial({ color: 0x5b1513, roughness: 0.55, metalness: 0.02 }),
-  cardFace: new THREE.MeshStandardMaterial({ color: 0xf2d9a0, roughness: 0.52 }),
-  shadow: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28 }),
-};
-
-function mesh(geo, mat, pos, rot = [0, 0, 0], cast = true, receive = true) {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(...pos);
-  m.rotation.set(...rot);
-  m.castShadow = cast;
-  m.receiveShadow = receive;
-  scene.add(m);
-  return m;
-}
-
-function addBox(w, h, d, mat, x, y, z, rotY = 0) {
-  return mesh(new THREE.BoxGeometry(w, h, d), mat, [x, y, z], [0, rotY, 0]);
-}
-
-function addCylinder(r1, r2, h, seg, mat, x, y, z, rot = [0, 0, 0]) {
-  return mesh(new THREE.CylinderGeometry(r1, r2, h, seg), mat, [x, y, z], rot);
-}
-
-function makeTextTexture(text, opts = {}) {
-  const size = opts.size || 512;
-  const c = document.createElement('canvas');
-  c.width = size; c.height = size;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = opts.bg || 'rgba(0,0,0,0)';
-  ctx.fillRect(0, 0, size, size);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `${opts.weight || 900} ${opts.fontSize || 120}px Georgia, serif`;
-  ctx.fillStyle = opts.color || '#f6d184';
-  ctx.shadowColor = 'rgba(0,0,0,.8)';
-  ctx.shadowBlur = 12;
-  ctx.fillText(text, size / 2, size / 2);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
-
-function makeLabel(text, x, y, z, scale = 1) {
-  const mat = new THREE.SpriteMaterial({ map: makeTextTexture(text, { fontSize: 86 }), transparent: true });
-  const sp = new THREE.Sprite(mat);
-  sp.position.set(x, y, z);
-  sp.scale.set(1.8 * scale, 1.8 * scale, 1);
-  scene.add(sp);
-  return sp;
-}
-
-// Room: floor, walls, beams
-mesh(new THREE.PlaneGeometry(42, 42), mats.darkWood, [0, -0.03, 0], [-Math.PI / 2, 0, 0], false, true);
-for (let i = -20; i <= 20; i += 2.4) {
-  addBox(0.08, 0.03, 42, mats.wood, i, 0.01, 0, 0);
-  addBox(42, 0.035, 0.08, mats.wood, 0, 0.015, i, 0);
-}
-addBox(42, 8, 0.45, mats.darkWood, 0, 4, -18);
-addBox(42, 8, 0.45, mats.darkWood, 0, 4, 18);
-addBox(0.45, 8, 42, mats.darkWood, -18, 4, 0);
-addBox(0.45, 8, 42, mats.darkWood, 18, 4, 0);
-for (let x of [-14, -7, 0, 7, 14]) addBox(0.35, 8, 0.35, mats.wood, x, 4, -17.6);
-for (let z of [-14, -7, 0, 7, 14]) addBox(0.35, 8, 0.35, mats.wood, -17.6, 4, z);
-for (let x of [-10, 0, 10]) addBox(2, 0.4, 42, mats.wood, x, 7.8, 0);
-for (let z of [-10, 0, 10]) addBox(42, 0.35, 2, mats.wood, 0, 7.9, z);
-
-// Windows with moon glow
-for (let x of [-10, 10]) {
-  const w = addBox(4, 2.8, 0.08, new THREE.MeshStandardMaterial({ color: 0x263a48, emissive: 0x102a3d, roughness: 0.2 }), x, 4.2, -17.72);
-  addBox(0.12, 3, 0.1, mats.wood, x, 4.2, -17.64);
-  addBox(4.2, 0.12, 0.1, mats.wood, x, 4.2, -17.63);
-}
-
-// Fireplace
-addBox(5.2, 3.4, 0.65, mats.wood, 0, 1.8, -17.35);
-addBox(3.8, 2.25, 0.75, mats.black, 0, 1.05, -16.95);
-const fireGroup = new THREE.Group();
-scene.add(fireGroup);
-for (let i = 0; i < 7; i++) {
-  const flame = addCylinder(0.08, 0.28, 1.1 + Math.random() * 0.55, 18, new THREE.MeshBasicMaterial({ color: i % 2 ? 0xff9d2e : 0xd93218, transparent: true, opacity: 0.75 }), -1.1 + i * 0.36, 0.72, -16.54, [0, 0, Math.random() * 0.4]);
-  fireGroup.add(flame);
-}
-const fireLight = new THREE.PointLight(0xff7b24, 4.5, 16, 1.6);
-fireLight.position.set(0, 1.3, -15.8);
-fireLight.castShadow = true;
-scene.add(fireLight);
-
-// Bar shelves and bottles
-addBox(9, 0.8, 2, mats.wood, 13.2, 0.4, -13.8);
-addBox(9.5, 4.2, 0.55, mats.darkWood, 13.2, 2.8, -16.4);
-for (let y of [1.7, 2.7, 3.7, 4.7]) addBox(9, 0.12, 0.7, mats.wood, 13.2, y, -15.95);
-for (let i = 0; i < 48; i++) {
-  const x = 9.1 + Math.random() * 8.2;
-  const y = 1.85 + Math.floor(i / 12) * 1.0;
-  const z = -15.7 + Math.random() * 0.25;
-  const bottleMat = new THREE.MeshPhysicalMaterial({ color: [0x365c38, 0x63371e, 0x1c2c4a, 0x6d1919][i % 4], transparent: true, opacity: 0.72, roughness: 0.18, transmission: 0.15 });
-  addCylinder(0.09, 0.11, 0.48 + Math.random() * 0.2, 12, bottleMat, x, y, z);
-  addCylinder(0.04, 0.05, 0.22, 10, bottleMat, x, y + 0.34, z);
-}
-
-// Main table
-const table = new THREE.Group(); scene.add(table);
-const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(4.15, 4.45, 0.55, 80), mats.wood);
-tableTop.position.y = 1.05; tableTop.castShadow = true; tableTop.receiveShadow = true; table.add(tableTop);
-const felt = new THREE.Mesh(new THREE.CylinderGeometry(3.62, 3.62, 0.07, 80), mats.green);
-felt.position.y = 1.37; felt.castShadow = true; felt.receiveShadow = true; table.add(felt);
-const rim = new THREE.Mesh(new THREE.TorusGeometry(4.18, 0.16, 18, 90), mats.gold);
-rim.position.y = 1.39; rim.rotation.x = Math.PI / 2; rim.castShadow = true; table.add(rim);
-for (let a = 0; a < Math.PI * 2; a += Math.PI / 2) {
-  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 1.4, 18), mats.wood);
-  leg.position.set(Math.cos(a) * 2.4, 0.4, Math.sin(a) * 2.4); leg.castShadow = true; table.add(leg);
-}
-
-// Props on table
-for (let i = 0; i < 32; i++) {
-  const angle = Math.random() * Math.PI * 2;
-  const r = 0.6 + Math.random() * 2.6;
-  const chip = addCylinder(0.13, 0.13, 0.045, 24, i % 3 === 0 ? mats.red : i % 3 === 1 ? mats.gold : mats.black, Math.cos(angle) * r, 1.49 + i * 0.003, Math.sin(angle) * r);
-  chip.rotation.x = Math.PI / 2;
-}
-for (let i = 0; i < 11; i++) {
-  const c = addBox(0.58, 0.025, 0.82, i % 2 ? mats.cardBack : mats.cardFace, -1.6 + i * 0.27, 1.52 + i * 0.003, 0.2 + Math.sin(i) * 0.05, 0.12 * i);
-  c.rotation.x = -Math.PI / 2;
-}
-const revolver = new THREE.Group(); scene.add(revolver);
-revolver.position.set(1.55, 1.56, -0.78); revolver.rotation.y = -0.65;
-revolver.add(new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.22, 0.22), mats.brass));
-const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.05, 20), mats.black);
-barrel.rotation.z = Math.PI / 2; barrel.position.x = 0.78; revolver.add(barrel);
-const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.35, 24), mats.brass);
-drum.rotation.z = Math.PI / 2; drum.position.x = 0.15; revolver.add(drum);
-const handle = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.65, 0.18), mats.wood);
-handle.position.set(-0.36, -0.35, 0); handle.rotation.z = -0.35; revolver.add(handle);
-
-// Chairs and players
-const playerMeshes = [];
-function makePlayer(i, name, angle) {
-  const group = new THREE.Group();
-  const x = Math.cos(angle) * 6.0, z = Math.sin(angle) * 6.0;
-  group.position.set(x, 0, z);
-  group.lookAt(0, 0, 0);
-  scene.add(group);
-  const chair = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.25, 1.25), mats.wood); chair.position.y = 0.62; group.add(chair);
-  const back = new THREE.Mesh(new THREE.BoxGeometry(1.45, 1.65, 0.22), mats.wood); back.position.set(0, 1.35, 0.58); group.add(back);
-  const bodyMat = new THREE.MeshStandardMaterial({ color: [0x34211e, 0x1f2733, 0x2c301c, 0x3a1f24][i], roughness: .75 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.45, 0.92, 12, 20), bodyMat); body.position.y = 1.35; body.castShadow = true; group.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 24, 16), new THREE.MeshStandardMaterial({ color: [0x8a5736,0x654027,0x9b6740,0x734628][i], roughness: .6 })); head.position.y = 2.1; head.castShadow = true; group.add(head);
-  const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.36, 0.32, 24), mats.black); hat.position.y = 2.48; hat.castShadow = true; group.add(hat);
-  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.055, 28), mats.black); brim.position.y = 2.3; group.add(brim);
-  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.82, 8, 14), bodyMat); leftArm.position.set(-0.52, 1.42, -0.2); leftArm.rotation.z = 0.42; leftArm.rotation.x = 0.55; group.add(leftArm);
-  const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.82, 8, 14), bodyMat); rightArm.position.set(0.52, 1.42, -0.2); rightArm.rotation.z = -0.42; rightArm.rotation.x = 0.55; group.add(rightArm);
-  const label = makeLabel(name, x, 3.15, z, 0.62);
-  playerMeshes.push({ group, body, head, label, angle, baseY: 0, name });
-}
-['你', 'Raven', 'Doc', 'Viper'].forEach((n, i) => makePlayer(i, n, -Math.PI / 2 + i * Math.PI / 2));
-
-// Ambient props: side tables, candles, hanging lights, paintings
-for (let i = 0; i < 10; i++) {
-  const x = -14 + Math.random() * 28;
-  const z = -12 + Math.random() * 24;
-  if (Math.hypot(x, z) < 7) continue;
-  addCylinder(0.65, 0.75, 0.22, 30, mats.wood, x, .55, z);
-  addCylinder(0.12, 0.18, 1.05, 14, mats.wood, x, .15, z);
-  const candle = addCylinder(0.08, 0.08, 0.35, 16, mats.paper, x + .2, .88, z + .1);
-  const light = new THREE.PointLight(0xffbf64, .6, 4, 2);
-  light.position.set(x + .2, 1.2, z + .1); scene.add(light);
-}
-for (let i = 0; i < 7; i++) {
-  const light = new THREE.PointLight(0xffb65b, 1.5, 9, 1.7);
-  light.position.set(-12 + i * 4, 5.8, -2 + Math.sin(i) * 6);
-  light.castShadow = i % 2 === 0;
-  scene.add(light);
-  addCylinder(0.24, 0.32, 0.28, 24, mats.brass, light.position.x, light.position.y + .05, light.position.z);
-}
-const moon = new THREE.DirectionalLight(0x99c8ff, 0.55);
-moon.position.set(-6, 12, -10); moon.castShadow = true; scene.add(moon);
-scene.add(new THREE.AmbientLight(0x2b1811, 0.75));
-
-// Game logic
 const ranks = ['KING', 'QUEEN', 'ACE'];
 const suits = ['♠', '♥', '♦', '♣'];
 let deck = [];
@@ -234,7 +10,14 @@ let lastPlay = null;
 let chamber = 1;
 let round = 0;
 let busy = false;
+let yaw = 0;
+let zoom = 1;
 
+const cameraEl = document.getElementById('camera');
+const propsEl = document.getElementById('props');
+const players3dEl = document.getElementById('players3d');
+const tableCards3d = document.getElementById('tableCards3d');
+const tableChips3d = document.getElementById('tableChips3d');
 const handEl = document.getElementById('handCards');
 const playersPanel = document.getElementById('playersPanel');
 const logEl = document.getElementById('log');
@@ -243,13 +26,110 @@ const chamberText = document.getElementById('chamberText');
 const statusText = document.getElementById('statusText');
 const toast = document.getElementById('toast');
 
-function safeId() {
-  if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
-    return globalThis.crypto.randomUUID();
-  }
-  return `card-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+function set3d(el, x, y, z, rx = 0, ry = 0, rz = 0, s = 1) {
+  el.style.transform = `translate3d(${x}px,${y}px,${z}px) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg) scale(${s})`;
 }
 
+function makeEl(cls, parent = propsEl) {
+  const el = document.createElement('div');
+  el.className = cls;
+  parent.appendChild(el);
+  return el;
+}
+
+function buildTavern() {
+  propsEl.innerHTML = '';
+  players3dEl.innerHTML = '';
+  tableCards3d.innerHTML = '';
+  tableChips3d.innerHTML = '';
+
+  for (let i = -5; i <= 5; i++) {
+    const b = makeEl('beam');
+    set3d(b, i * 190, 0, 600, 0, 0, 90);
+    const b2 = makeEl('beam');
+    set3d(b2, 0, i * 190, 602, 0, 0, 0);
+  }
+
+  [-420, 420].forEach(x => {
+    const w = makeEl('window');
+    set3d(w, x, -1050, 230, 90, 0, 0);
+  });
+
+  const fp = makeEl('fireplace');
+  set3d(fp, 0, -1080, 45, 90, 0, 0);
+  for (let i = 0; i < 8; i++) {
+    const f = makeEl('flame');
+    fp.appendChild(f);
+    f.style.left = `${85 + i * 13}px`;
+    f.style.bottom = `${8 + Math.random() * 10}px`;
+    f.style.animationDelay = `${Math.random()}s`;
+  }
+
+  const bar = makeEl('bar3d');
+  set3d(bar, 610, -720, 8, 0, 0, 0);
+  const shelf = makeEl('shelf');
+  set3d(shelf, 610, -990, 190, 90, 0, 0);
+  for (let i = 0; i < 56; i++) {
+    const bot = makeEl('bottle');
+    shelf.appendChild(bot);
+    bot.style.left = `${18 + (i % 14) * 27}px`;
+    bot.style.top = `${20 + Math.floor(i / 14) * 45}px`;
+    const colors = ['rgba(49,113,56,.78)', 'rgba(95,50,28,.78)', 'rgba(42,56,118,.78)', 'rgba(118,30,30,.78)'];
+    bot.style.background = `linear-gradient(90deg,rgba(255,255,255,.25),${colors[i % colors.length]})`;
+  }
+
+  for (let i = 0; i < 9; i++) {
+    const l = makeEl('lamp');
+    set3d(l, -720 + i * 180, -200 + Math.sin(i) * 360, 420, 0, 0, 0);
+  }
+
+  for (let i = 0; i < 13; i++) {
+    const c = makeEl('candle');
+    const angle = (Math.PI * 2 * i) / 13;
+    const r = 250 + Math.random() * 560;
+    set3d(c, Math.cos(angle) * r, Math.sin(angle) * r, -22, 0, 0, Math.random() * 30);
+  }
+
+  for (let i = 0; i < 40; i++) addChip3d(Math.random() * 360, 60 + Math.random() * 150, i % 3);
+  for (let i = 0; i < 9; i++) addTableCard(-80 + i * 17, -10 + Math.sin(i) * 8, i * 7, i % 2 === 0);
+
+  ['你', 'Raven', 'Doc', 'Viper'].forEach((name, i) => addPlayer3d(name, i));
+  updateCamera();
+}
+
+function addTableCard(x, y, rz, face = false) {
+  const c = makeEl(`card3d ${face ? '' : 'back'}`, tableCards3d);
+  c.textContent = face ? ['K', 'Q', 'A'][Math.floor(Math.random() * 3)] : '';
+  set3d(c, x, y, 0, 0, 0, rz);
+  return c;
+}
+
+function addChip3d(angleDeg, r, kind = 0) {
+  const chip = makeEl('chip3d', tableChips3d);
+  const angle = angleDeg * Math.PI / 180;
+  chip.style.background = ['#8d221e', '#d6a84f', '#101010'][kind % 3];
+  set3d(chip, Math.cos(angle) * r, Math.sin(angle) * r, 0, 0, 0, angleDeg);
+  return chip;
+}
+
+function addPlayer3d(name, i) {
+  const p = makeEl('player3d', players3dEl);
+  p.dataset.index = i;
+  p.innerHTML = `<div class="nameplate">${name}</div><div class="chair"></div><div class="body"></div><div class="head"></div><div class="hat"></div><div class="arm a1"></div><div class="arm a2"></div>`;
+  const pos = [
+    { x: 0, y: 430, z: 5, rz: 180 },
+    { x: 480, y: 0, z: 5, rz: -90 },
+    { x: 0, y: -430, z: 5, rz: 0 },
+    { x: -480, y: 0, z: 5, rz: 90 },
+  ][i];
+  set3d(p, pos.x, pos.y, pos.z, 0, 0, pos.rz);
+}
+
+function updateCamera() {
+  cameraEl.style.transform = `rotateX(63deg) rotateZ(${yaw}deg) translateZ(${-160 * zoom}px) scale(${zoom})`;
+}
+
+function safeId() { return `card-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function buildDeck() {
   const d = [];
   for (const r of ranks) for (const s of suits) d.push({ rank: r, suit: s, id: safeId() });
@@ -269,6 +149,9 @@ function newGame() {
   chamber = 1;
   round++;
   logEl.innerHTML = '';
+  tableCards3d.innerHTML = '';
+  tableChips3d.innerHTML = '';
+  for (let i = 0; i < 36; i++) addChip3d(Math.random() * 360, 50 + Math.random() * 150, i % 3);
   log(`第 ${round} 局开始。目标牌是 ${targetRank}。`);
   updateUI();
   showToast(`目标牌：${targetRank}`);
@@ -298,21 +181,21 @@ function updateUI() {
     const pct = Math.max(5, Math.min(100, p.chips / 10));
     el.innerHTML = `<div class="player-top"><span class="player-name">${p.name}</span><span class="player-status">${p.alive ? p.lastAction : '出局'}</span></div><div class="player-status">筹码 ${p.chips} · 手牌 ${p.hand.length} · 风险 ${p.risk}/6</div><div class="chips"><span style="width:${pct}%"></span></div>`;
     playersPanel.appendChild(el);
+    const p3d = document.querySelector(`.player3d[data-index="${i}"]`);
+    if (p3d) {
+      p3d.classList.toggle('active', i === currentPlayer && p.alive);
+      p3d.classList.toggle('dead', !p.alive);
+      const name = p3d.querySelector('.nameplate');
+      name.textContent = `${p.name} · ${p.chips}`;
+    }
   });
   renderHand();
   document.getElementById('challengeBtn').disabled = !lastPlay || busy || currentPlayer !== 0;
   document.getElementById('playBtn').disabled = busy || currentPlayer !== 0 || players[0].hand.length === 0;
   document.getElementById('passBtn').disabled = busy || currentPlayer !== 0;
   statusText.textContent = currentPlayer === 0
-    ? (lastPlay && players[lastPlay.playerIndex].hand.length === 0
-      ? `${players[lastPlay.playerIndex].name} 已出完最后一手。你可以质疑；如果观察，他将赢下本局。`
-      : '轮到你。选择手牌，或者直接观察/质疑上一家。')
+    ? (lastPlay && players[lastPlay.playerIndex].hand.length === 0 ? `${players[lastPlay.playerIndex].name} 已出完最后一手。你可以质疑；如果观察，他将赢下本局。` : '轮到你。选择手牌，或者直接观察/质疑上一家。')
     : `${players[currentPlayer].name} 正在思考……`;
-  playerMeshes.forEach((pm, i) => {
-    pm.label.material.opacity = players[i].alive ? 1 : .28;
-    pm.body.material.emissive = new THREE.Color(i === currentPlayer ? 0x2d1600 : 0x000000);
-    pm.body.material.emissiveIntensity = i === currentPlayer ? .8 : 0;
-  });
 }
 
 function renderHand() {
@@ -334,7 +217,7 @@ function nextPlayer() {
   let tries = 0;
   do { currentPlayer = (currentPlayer + 1) % players.length; tries++; } while ((!players[currentPlayer].alive || players[currentPlayer].hand.length === 0) && tries < 10);
   updateUI();
-  if (players[currentPlayer].ai) setTimeout(aiTurn, 900 + Math.random() * 1100);
+  if (players[currentPlayer].ai) setTimeout(aiTurn, 850 + Math.random() * 950);
 }
 
 function playCards(playerIndex, cardIndexes, claimedCount) {
@@ -343,7 +226,7 @@ function playCards(playerIndex, cardIndexes, claimedCount) {
   p.hand = p.hand.filter((_, i) => !cardIndexes.includes(i));
   lastPlay = { playerIndex, cards: actual, claimedCount, honest: actual.every(c => c.rank === targetRank || c.rank === 'JOKER') };
   p.lastAction = `声明 ${claimedCount} 张 ${targetRank}`;
-  p.chips -= 20 * claimedCount;
+  p.chips = Math.max(0, p.chips - 20 * claimedCount);
   animateCardThrow(playerIndex, claimedCount);
   animateChips(playerIndex, claimedCount);
   log(`${p.name} 推出 ${claimedCount} 张牌，并声称全是 ${targetRank}。`);
@@ -364,29 +247,29 @@ function challenge(challengerIndex) {
   animateAccuse(challengerIndex, lastPlay.playerIndex);
   setTimeout(() => {
     const loserIndex = lastPlay.honest ? challengerIndex : lastPlay.playerIndex;
-    const loser = players[loserIndex];
     log(lastPlay.honest ? `${challenged.name} 没有撒谎，${challenger.name} 质疑失败。` : `${challenged.name} 被抓到诈唬。`, 'danger');
     const roundEnded = roulette(loserIndex);
     lastPlay = null;
-    if (!roundEnded) setTimeout(() => { busy = false; nextPlayer(); }, 2100);
-  }, 1200);
+    if (!roundEnded) setTimeout(() => { busy = false; nextPlayer(); }, 1700);
+  }, 900);
 }
 
 function roulette(playerIndex) {
   const p = players[playerIndex];
   const shot = Math.random() < p.risk / 6;
-  rotateRevolver();
+  document.querySelector('.revolver').classList.remove('kick');
+  void document.querySelector('.revolver').offsetWidth;
+  document.querySelector('.revolver').classList.add('kick');
   if (shot) {
     p.alive = false;
     p.lastAction = '中弹出局';
     p.chips = Math.max(0, p.chips - 300);
     log(`${p.name} 扣下扳机：砰！出局。`, 'danger');
     showToast(`${p.name} 出局！`);
-    playerMeshes[playerIndex].group.rotation.z = 0.45;
   } else {
     p.risk++;
     p.chips = Math.max(0, p.chips - 120);
-    log(`${p.name} 扣下扳机：空响。风险升到 ${p.risk}/6。`);
+    log(`${p.name} 扣下扳机：咔哒，空响。风险升到 ${p.risk}/6。`);
     showToast('咔哒……空枪');
   }
   chamber = Math.max(chamber, p.risk);
@@ -402,8 +285,9 @@ function finishRound(winnerIndex, reason = '拿走酒馆桌上的筹码') {
   winner.lastAction = '本局赢家';
   log(`${winner.name} ${reason}。`);
   showToast(`${winner.name} 获胜`);
+  animatePotToWinner(winnerIndex);
   updateUI();
-  setTimeout(() => { busy = false; newGame(); }, 2800);
+  setTimeout(() => { busy = false; newGame(); }, 2500);
 }
 
 function checkEnd() {
@@ -434,98 +318,71 @@ function aiTurn() {
   playCards(currentPlayer, indexes, count);
 }
 
+function playerPoint(index) {
+  return [
+    { x: 0, y: 330 }, { x: 360, y: 0 }, { x: 0, y: -330 }, { x: -360, y: 0 }
+  ][index];
+}
+
 function animateCardThrow(playerIndex, count) {
-  const pm = playerMeshes[playerIndex];
+  const start = playerPoint(playerIndex);
   for (let i = 0; i < count; i++) {
-    const card = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.018, 0.7), mats.cardBack);
-    card.position.copy(pm.group.position).multiplyScalar(.72);
-    card.position.y = 1.7;
-    card.rotation.set(Math.random(), pm.angle, Math.random());
-    scene.add(card);
-    card.userData.fly = { t: 0, sx: card.position.clone(), ex: new THREE.Vector3((Math.random()-.5)*1.6, 1.64 + i*.025, (Math.random()-.5)*1.2), spin: Math.random() * 8 + 4 };
+    const card = addTableCard(start.x * .4, start.y * .4, Math.random() * 40, false);
+    card.style.transition = 'transform .75s cubic-bezier(.2,.85,.18,1)';
+    setTimeout(() => set3d(card, -50 + Math.random() * 100, -40 + Math.random() * 80, 50 + i * 4, 0, 0, Math.random() * 50), 20);
   }
 }
 
 function animateChips(playerIndex, count) {
-  const pm = playerMeshes[playerIndex];
+  const start = playerPoint(playerIndex);
   for (let i = 0; i < 4 + count * 3; i++) {
-    const chip = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, .04, 18), [mats.red, mats.gold, mats.black][i % 3]);
-    chip.position.copy(pm.group.position).multiplyScalar(.68);
-    chip.position.y = 1.08 + Math.random()*.4;
-    chip.rotation.x = Math.PI/2;
-    chip.castShadow = true;
-    scene.add(chip);
-    chip.userData.fly = { t: 0, sx: chip.position.clone(), ex: new THREE.Vector3((Math.random()-.5)*1.1, 1.65 + Math.random()*.2, (Math.random()-.5)*1.1), spin: Math.random() * 10 + 8 };
+    const chip = addChip3d(0, 0, i % 3);
+    chip.style.transition = 'transform .85s cubic-bezier(.2,.85,.18,1)';
+    set3d(chip, start.x * .45, start.y * .45, 70, 0, 0, 0);
+    setTimeout(() => set3d(chip, -85 + Math.random() * 170, -65 + Math.random() * 130, 55, 0, 0, Math.random() * 360), 35);
   }
+}
+
+function animatePotToWinner(winnerIndex) {
+  const end = playerPoint(winnerIndex);
+  document.querySelectorAll('.chip3d').forEach((chip, i) => {
+    chip.style.transition = 'transform .9s cubic-bezier(.2,.85,.18,1), opacity .9s ease';
+    setTimeout(() => {
+      set3d(chip, end.x * .45 + Math.random() * 60 - 30, end.y * .45 + Math.random() * 60 - 30, 85, 0, 0, Math.random() * 360);
+      chip.style.opacity = '.2';
+    }, i * 12);
+  });
 }
 
 function animateAccuse(from, to) {
-  const a = playerMeshes[from].group.position.clone();
-  const b = playerMeshes[to].group.position.clone();
-  const lineGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(a.x, 2.7, a.z), new THREE.Vector3(b.x, 2.7, b.z)]);
-  const line = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0xff302a, transparent: true, opacity: .95 }));
-  scene.add(line);
-  line.userData.fade = 1.0;
+  const a = playerPoint(from), b = playerPoint(to);
+  const line = makeEl('accuse-line', propsEl);
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  line.style.position = 'absolute';
+  line.style.width = `${len}px`;
+  line.style.height = '8px';
+  line.style.background = 'linear-gradient(90deg, transparent, #ff342e, transparent)';
+  line.style.boxShadow = '0 0 26px #ff342e';
+  line.style.opacity = '1';
+  line.style.transition = 'opacity .8s ease';
+  set3d(line, a.x, a.y, 120, 0, 0, Math.atan2(dy, dx) * 180 / Math.PI);
+  setTimeout(() => line.style.opacity = '0', 300);
+  setTimeout(() => line.remove(), 1200);
 }
 
-function rotateRevolver() {
-  revolver.userData.kick = 1;
-  fireLight.intensity = 8;
-  setTimeout(() => fireLight.intensity = 4.5, 180);
-}
-
-// Controls
-let orbitYaw = 0;
 let dragging = false, lastX = 0;
-canvas.addEventListener('pointerdown', e => { dragging = true; lastX = e.clientX; });
+document.getElementById('worldWrap').addEventListener('pointerdown', e => { dragging = true; lastX = e.clientX; });
 addEventListener('pointerup', () => dragging = false);
-addEventListener('pointermove', e => { if (dragging) { orbitYaw += (e.clientX - lastX) * 0.004; lastX = e.clientX; } });
-addEventListener('wheel', e => { camera.position.multiplyScalar(1 + Math.sign(e.deltaY) * .04); camera.position.clampLength(7, 16); });
+addEventListener('pointermove', e => { if (dragging) { yaw += (e.clientX - lastX) * .12; lastX = e.clientX; updateCamera(); } });
+addEventListener('wheel', e => { zoom = Math.max(.72, Math.min(1.35, zoom + Math.sign(e.deltaY) * .06)); updateCamera(); }, { passive: true });
 
-function animate() {
-  requestAnimationFrame(animate);
-  const t = clock.getElapsedTime();
-  fireGroup.children.forEach((f, i) => { f.scale.y = 0.82 + Math.sin(t * 7 + i) * .22 + Math.random()*.04; f.material.opacity = .55 + Math.sin(t*5+i)*.18; });
-  fireLight.intensity += (4.5 + Math.sin(t*8)*.55 - fireLight.intensity) * .08;
-  table.rotation.y = Math.sin(t * .25) * .015;
-  playerMeshes.forEach((pm, i) => {
-    pm.head.position.y = 2.1 + Math.sin(t * 1.6 + i) * .025;
-    pm.group.position.y = Math.sin(t * 1.2 + i) * .01;
+function tick() {
+  document.querySelectorAll('.player3d').forEach((el, i) => {
+    if (!el.classList.contains('dead')) el.style.filter = `brightness(${.92 + Math.sin(Date.now()/600 + i) * .06})`;
   });
-  scene.children.forEach(obj => {
-    if (obj.userData.fly) {
-      const f = obj.userData.fly;
-      f.t += 0.028;
-      const k = Math.min(1, f.t);
-      obj.position.lerpVectors(f.sx, f.ex, k);
-      obj.position.y += Math.sin(k * Math.PI) * 1.4;
-      obj.rotation.y += 0.15;
-      obj.rotation.z += 0.08;
-      if (k >= 1) delete obj.userData.fly;
-    }
-    if (obj.userData.fade) {
-      obj.userData.fade -= .025;
-      obj.material.opacity = obj.userData.fade;
-      if (obj.userData.fade <= 0) scene.remove(obj);
-    }
-  });
-  if (revolver.userData.kick) {
-    revolver.rotation.z = Math.sin(t * 42) * .25 * revolver.userData.kick;
-    revolver.userData.kick *= .9;
-    if (revolver.userData.kick < .03) { revolver.userData.kick = 0; revolver.rotation.z = 0; }
-  }
-  const radius = camera.position.length();
-  camera.position.x = Math.sin(orbitYaw) * radius * .42;
-  camera.position.z = Math.cos(orbitYaw) * radius;
-  camera.lookAt(0, 1.5, 0);
-  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
 }
-
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
 
 document.getElementById('playBtn').onclick = () => {
   if (currentPlayer !== 0 || busy) return;
@@ -534,9 +391,7 @@ document.getElementById('playBtn').onclick = () => {
   if (chosen.length === 0) {
     const auto = [...Array(players[0].hand.length).keys()].slice(0, Math.min(claimed, players[0].hand.length));
     playCards(0, auto, auto.length);
-  } else {
-    playCards(0, chosen, chosen.length);
-  }
+  } else playCards(0, chosen, chosen.length);
 };
 document.getElementById('challengeBtn').onclick = () => challenge(0);
 document.getElementById('passBtn').onclick = () => {
@@ -553,5 +408,6 @@ document.getElementById('newRoundBtn').onclick = newGame;
 document.getElementById('peekBtn').onclick = () => { showHand = !showHand; renderHand(); };
 document.getElementById('rulesToggle').onclick = () => document.querySelector('.rules').classList.toggle('open');
 
+buildTavern();
 newGame();
-animate();
+tick();
